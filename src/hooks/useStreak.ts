@@ -1,5 +1,4 @@
 import { useState, useEffect, useCallback } from 'react'
-import { supabase } from '../lib/supabase'
 import type { Streak } from '../lib/types'
 
 function getToday() {
@@ -12,25 +11,31 @@ function getYesterday() {
   return d.toISOString().split('T')[0]
 }
 
+function loadStreak(): Streak {
+  const stored = localStorage.getItem('streak')
+  if (stored) return JSON.parse(stored)
+  return {
+    id: 'local',
+    user_id: 'local',
+    current_streak: 0,
+    longest_streak: 0,
+    last_completed_date: null,
+  }
+}
+
+function saveStreak(streak: Streak) {
+  localStorage.setItem('streak', JSON.stringify(streak))
+}
+
 export function useStreak(userId: string) {
-  const [streak, setStreak] = useState<Streak | null>(null)
-
-  const fetchStreak = useCallback(async () => {
-    const { data } = await supabase
-      .from('streaks')
-      .select('*')
-      .eq('user_id', userId)
-      .single()
-
-    if (data) setStreak(data)
-  }, [userId])
+  const [streak, setStreak] = useState<Streak>(loadStreak)
 
   useEffect(() => {
-    fetchStreak()
-  }, [fetchStreak])
+    saveStreak(streak)
+  }, [streak])
 
-  const checkAndUpdateStreak = useCallback(async (allTasksCompleted: boolean) => {
-    if (!streak || !allTasksCompleted) return
+  const checkAndUpdateStreak = useCallback((allTasksCompleted: boolean) => {
+    if (!allTasksCompleted) return
 
     const today = getToday()
     if (streak.last_completed_date === today) return
@@ -40,24 +45,13 @@ export function useStreak(userId: string) {
     const newCurrent = isConsecutive ? streak.current_streak + 1 : 1
     const newLongest = Math.max(newCurrent, streak.longest_streak)
 
-    const { error } = await supabase
-      .from('streaks')
-      .update({
-        current_streak: newCurrent,
-        longest_streak: newLongest,
-        last_completed_date: today
-      })
-      .eq('user_id', userId)
+    setStreak(prev => ({
+      ...prev,
+      current_streak: newCurrent,
+      longest_streak: newLongest,
+      last_completed_date: today,
+    }))
+  }, [streak])
 
-    if (!error) {
-      setStreak(prev => prev ? {
-        ...prev,
-        current_streak: newCurrent,
-        longest_streak: newLongest,
-        last_completed_date: today
-      } : prev)
-    }
-  }, [streak, userId])
-
-  return { streak, checkAndUpdateStreak, refetch: fetchStreak }
+  return { streak, checkAndUpdateStreak, refetch: () => {} }
 }
